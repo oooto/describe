@@ -43,40 +43,54 @@ def describe(data, percentiles=None, include=None, exclude=None):
 
     def describe_numeric_1d(series):
         stat_index = (
-            ["count", "mean", "std", "min"] + formatted_percentiles + ["max"]
+            ["count", "unique", "unique_rate", "null", "null_rate", "mean", "std", "min"] + formatted_percentiles + ["max"]
         )
+        count = series.count()
+        objcounts = series.value_counts()
+        count_unique = len(objcounts[objcounts != 0])
+        count_null = series.isnull().sum()
         d = (
-            [series.count(), series.mean(), series.std(), series.min()]
+            [count, count_unique, count_unique / count, count_null, count_null / count, series.mean(), series.std(), series.min()]
             + series.quantile(percentiles).tolist()
             + [series.max()]
         )
         return pd.Series(d, index=stat_index, name=series.name)
 
     def describe_categorical_1d(data):
-        names = ["count", "unique"]
+        names = ["count", "unique", "unique_rate", "null", "null_rate"]
+        count = data.count()
         objcounts = data.value_counts()
-        count_unique = len(objcounts[objcounts != 0])
-        result = [data.count(), count_unique]
+        nobjcounts = objcounts[objcounts != 0]
+        count_unique = len(nobjcounts)
+        count_null = data.isnull().sum()
+        result = [count, count_unique, count_unique / count, count_null, count_null / count]
         dtype = None
         if result[1] > 0:
-            top, freq = objcounts.index[0], objcounts.iloc[0]
-            names += ["top", "freq"]
-            result += [top, freq]
+            top, top_freq = nobjcounts.index[0], nobjcounts.iloc[0]
+            bottom, bottom_freq = nobjcounts.index[count_unique-1], nobjcounts.iloc[count_unique-1]
+            names += ["top", "top_freq", "top_rate", "bottom", "bottom_freq", "bottom_rate"]
+            result += [top, top_freq, top_freq / count, bottom, bottom_freq, bottom_freq / count]
 
         # If the DataFrame is empty, set 'top' and 'freq' to None
         # to maintain output shape consistency
         else:
-            names += ["top", "freq"]
-            result += [np.nan, np.nan]
+            names += ["top", "top_freq", "top_rate", "bottom", "bottom_freq", "bottom_rate"]
+            result += [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
             dtype = "object"
 
         return pd.Series(result, index=names, name=data.name, dtype=dtype)
 
     def describe_timestamp_1d(data):
         # GH-30164
-        stat_index = ["count", "mean", "min"] + formatted_percentiles + ["max"]
+        stat_index = (
+            ["count", "unique", "unique_rate", "null", "null_rate", "mean", "min"] + formatted_percentiles + ["max"]
+        )
+        count = data.count()
+        objcounts = data.value_counts()
+        count_unique = len(objcounts[objcounts != 0])
+        count_null = data.isnull().sum()
         d = (
-            [data.count(), data.mean(), data.min()]
+            [count, count_unique, count_unique / count, count_null, count_null / count, data.mean(), data.min()]
             + data.quantile(percentiles).tolist()
             + [data.max()]
         )
@@ -120,8 +134,13 @@ def describe(data, percentiles=None, include=None, exclude=None):
 
     d = pd.concat([x.reindex(names, copy=False) for x in ldesc], axis=1, sort=False)
     d.columns = data.columns.copy()
-    return d
+    result = d.transpose()
+    return result
 
 if __name__ == '__main__':
-    s = pd.Series([1, 2, 3])
-    print(describe(s))
+    df = pd.DataFrame({'categorical': pd.Categorical(['d','e','d', np.nan]),
+                       'numeric': [1, 2, 3, np.nan],
+                       'object': ['a', 'b', 'c', np.nan],
+                       'datetime': [np.datetime64("2000-01-01"), np.datetime64("2010-01-01"), np.datetime64("2010-01-01"), pd.NaT]
+                       })
+    print(describe(df, include='all'))
