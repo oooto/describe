@@ -43,33 +43,35 @@ def describe(data, percentiles=None, include=None, exclude=None):
 
     def describe_numeric_1d(series):
         stat_index = (
-            ["count", "unique", "unique_rate", "null", "null_rate", "mean", "std", "min"] + formatted_percentiles + ["max"]
+            ["record", "unique", "unique_rate", "null", "null_rate", "zeros", "zeros_rate", "mean", "std", "min"] + formatted_percentiles + ["max"]
         )
-        count = series.count()
+        record = series.shape[0]
         objcounts = series.value_counts()
         count_unique = len(objcounts[objcounts != 0])
         count_null = series.isnull().sum()
+        zeros = record - np.count_nonzero(series)
         d = (
-            [count, count_unique, count_unique / count, count_null, count_null / count, series.mean(), series.std(), series.min()]
+            [record, count_unique, count_unique / record, count_null, count_null / record, zeros, zeros / record, series.mean(), series.std(), series.min()]
             + series.quantile(percentiles).tolist()
             + [series.max()]
         )
         return pd.Series(d, index=stat_index, name=series.name)
 
     def describe_categorical_1d(data):
-        names = ["count", "unique", "unique_rate", "null", "null_rate"]
-        count = data.count()
+        names = ["record", "unique", "unique_rate", "null", "null_rate", "empty", "empty_rate"]
+        record = data.shape[0]
         objcounts = data.value_counts()
         nobjcounts = objcounts[objcounts != 0]
         count_unique = len(nobjcounts)
         count_null = data.isnull().sum()
-        result = [count, count_unique, count_unique / count, count_null, count_null / count]
+        empty = sum(data == '')
+        result = [record, count_unique, count_unique / record, count_null, count_null / record, empty, empty / record]
         dtype = None
         if result[1] > 0:
             top, top_freq = nobjcounts.index[0], nobjcounts.iloc[0]
             bottom, bottom_freq = nobjcounts.index[count_unique-1], nobjcounts.iloc[count_unique-1]
             names += ["top", "top_freq", "top_rate", "bottom", "bottom_freq", "bottom_rate"]
-            result += [top, top_freq, top_freq / count, bottom, bottom_freq, bottom_freq / count]
+            result += [top, top_freq, top_freq / record, bottom, bottom_freq, bottom_freq / record]
 
         # If the DataFrame is empty, set 'top' and 'freq' to None
         # to maintain output shape consistency
@@ -83,14 +85,14 @@ def describe(data, percentiles=None, include=None, exclude=None):
     def describe_timestamp_1d(data):
         # GH-30164
         stat_index = (
-            ["count", "unique", "unique_rate", "null", "null_rate", "mean", "min"] + formatted_percentiles + ["max"]
+            ["record", "unique", "unique_rate", "null", "null_rate", "mean", "min"] + formatted_percentiles + ["max"]
         )
-        count = data.count()
+        record = data.shape[0]
         objcounts = data.value_counts()
         count_unique = len(objcounts[objcounts != 0])
         count_null = data.isnull().sum()
         d = (
-            [count, count_unique, count_unique / count, count_null, count_null / count, data.mean(), data.min()]
+            [record, count_unique, count_unique / record, count_null, count_null / record, data.mean(), data.min()]
             + data.quantile(percentiles).tolist()
             + [data.max()]
         )
@@ -138,9 +140,10 @@ def describe(data, percentiles=None, include=None, exclude=None):
     return result
 
 if __name__ == '__main__':
-    df = pd.DataFrame({'categorical': pd.Categorical(['d','e','d', np.nan]),
-                       'numeric': [1, 2, 3, np.nan],
-                       'object': ['a', 'b', 'c', np.nan],
-                       'datetime': [np.datetime64("2000-01-01"), np.datetime64("2010-01-01"), np.datetime64("2010-01-01"), pd.NaT]
+    df = pd.DataFrame({'categorical': pd.Categorical(['d','e','d', np.nan, '']),
+                       'numeric': [1, 2, 3, np.nan, 0],
+                       'object': ['a', 'b', 'c', np.nan, ''],
+                       'datetime': [np.datetime64("2000-01-01"), np.datetime64("2010-01-01"), np.datetime64("2010-01-01"), pd.NaT, np.datetime64("2010-01-01")]
                        })
-    print(describe(df, include='all'))
+    result = describe(df, include='all')
+    print(result)
